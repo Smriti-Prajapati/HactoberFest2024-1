@@ -1,0 +1,55 @@
+#include <iostream>
+#include <string>
+#include <curl/curl.h>
+#include <gumbo.h>
+
+// Function to handle the data received from the curl call
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
+// Function to search for links in the HTML
+void searchForLinks(GumboNode* node) {
+    if (node->type == GUMBO_NODE_ELEMENT && node->v.element.tag == GUMBO_TAG_A) {
+        GumboAttribute* href = gumbo_get_attribute(&node->v.element.attributes, "href");
+        if (href) {
+            std::cout << "Link: " << href->value << std::endl;
+        }
+    }
+
+    for (size_t i = 0; i < node->v.element.children.length; ++i) {
+        searchForLinks(static_cast<GumboNode*>(node->v.element.children.data[i]));
+    }
+}
+
+int main() {
+    CURL* curl;
+    CURLcode res;
+    std::string readBuffer;
+
+    // Initialize curl
+    curl = curl_easy_init();
+    if(curl) {
+        // Set the URL
+        curl_easy_setopt(curl, CURLOPT_URL, "http://example.com");
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        
+        // Perform the request
+        res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
+            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            return 1;
+        }
+
+        // Parse the HTML with Gumbo
+        GumboOutput* output = gumbo_parse(readBuffer.c_str());
+        searchForLinks(output->root);
+        gumbo_destroy_output(&kGumboDefaultOptions, output);
+    }
+
+    return 0;
+}
